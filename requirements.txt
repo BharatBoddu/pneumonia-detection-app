@@ -1,8 +1,9 @@
-tensorflow-cpu==2.16.1
+tensorflow-cpu==2.20.1
 streamlit==1.35.0
-numpy==1.25.2
-opencv-python-headless==4.8.0.76
+numpy==2.0.2
+cv2=4.13.0
 matplotlib==3.7.1
-pydicom==2.4.3
-Pillow==10.2.0
-scikit-learn==1.2.2
+pydicom==3.0.2
+scikit-learn==1.6.1
+pandas=2.3.3
+seaborn=0.13.2
