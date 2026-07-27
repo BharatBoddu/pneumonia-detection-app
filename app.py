@@ -3,6 +3,8 @@ import numpy as np
 import cv2
 import io
 import tensorflow as tf
+import requests, os
+from tensorflow.keras.models import load_model
 
 try:
     import pydicom
@@ -16,11 +18,24 @@ st.title("🫁 Pneumonia Detection from Chest X-Ray")
 st.write("Upload a chest X-ray image to check for pneumonia using AI.")
 st.markdown("---")
 
+# Google Drive direct download link
+MODEL_ID = "1aMbopMD9IocZAlfwgous7ml864xv7OfA"
+MODEL_URL = f"https://drive.google.com/uc?export=download&id={MODEL_ID}"
 MODEL_PATH = "best_pneumonia_model.keras"
 
-@st.cache_resource
-def load_model():
-    return tf.keras.models.load_model(MODEL_PATH)
+# Download if not already present
+if not os.path.exists(MODEL_PATH):
+    print("Downloading model from Google Drive...")
+    response = requests.get(MODEL_URL)
+    with open(MODEL_PATH, "wb") as f:
+        f.write(response.content)
+
+# Load the model
+model = load_model(MODEL_PATH)
+
+#@st.cache_resource
+#def load_model():
+#    return tf.keras.models.load_model(MODEL_PATH)
 
 def load_dicom(file_bytes, size=(128,128)):
     dcm = pydicom.dcmread(io.BytesIO(file_bytes))
