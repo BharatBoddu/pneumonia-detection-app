@@ -1,6 +1,6 @@
 import streamlit as st
 import numpy as np
-import opencv-python
+import cv2
 import io
 import tensorflow as tf
 
