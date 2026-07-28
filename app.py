@@ -4,8 +4,9 @@ import cv2
 import io
 import tensorflow as tf
 import os
-import gdown
 from tensorflow.keras.models import load_model
+from pathlib import Path
+import requests
 
 try:
     import pydicom
@@ -19,18 +20,60 @@ st.title("🫁 Pneumonia Detection from Chest X-Ray")
 st.write("Upload a chest X-ray image to check for pneumonia using AI.")
 st.markdown("---")
 
-# Google Drive direct download link
-MODEL_ID = "1aMbopMD9IocZAlfwgous7ml864xv7OfA"
-MODEL_PATH = "best_pneumonia_model.keras"
+# Hugging Face Model Hub (recommended for large models)
+# Replace with your own Hugging Face repo: https://huggingface.co/<username>/<repo-name>
+HF_MODEL_ID = "bharatboddu/pneumonia-detection-model"  # Update this!
+HF_MODEL_FILE = "best_pneumonia_model.keras"
+
+# Use Streamlit's cache directory for persistent storage
+CACHE_DIR = Path(st.config.get_option("client.caching.cache_dir"))
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+MODEL_PATH = CACHE_DIR / HF_MODEL_FILE
 
 @st.cache_resource
 def load_pneumonia_model():
-    if not os.path.exists(MODEL_PATH):
-        st.info("Downloading model from Google Drive... This may take a moment.")
-        gdown.download(f"https://drive.google.com/uc?id={MODEL_ID}", MODEL_PATH, quiet=False)
-    return load_model(MODEL_PATH)
+    try:
+        if not MODEL_PATH.exists():
+            st.info("📥 Downloading model from Hugging Face... This may take a moment.")
+            try:
+                # Download from Hugging Face Hub
+                hf_url = f"https://huggingface.co/{HF_MODEL_ID}/resolve/main/{HF_MODEL_FILE}"
+                response = requests.get(hf_url, timeout=300)  # 5 min timeout for large files
+                response.raise_for_status()
+                
+                with open(MODEL_PATH, 'wb') as f:
+                    f.write(response.content)
+                    
+            except Exception as e:
+                st.error(f"❌ Download failed: {str(e)}")
+                st.error("💡 Make sure to upload your model to Hugging Face Hub first:")
+                st.code("huggingface-cli upload <your-username>/<repo-name> best_pneumonia_model.keras .")
+                return None
+            
+            # Verify download
+            if not MODEL_PATH.exists():
+                st.error("Model file download failed. File not found.")
+                return None
+            
+            file_size_mb = MODEL_PATH.stat().st_size / (1024 * 1024)
+            if file_size_mb < 1:
+                st.error("Model file is empty. Download may have failed.")
+                MODEL_PATH.unlink()
+                return None
+            
+            st.success(f"✅ Model downloaded successfully! ({file_size_mb:.1f} MB)")
+        
+        st.success("✅ Model loaded from cache!")
+        return load_model(str(MODEL_PATH))
+    except Exception as e:
+        st.error(f"Error loading model: {str(e)}")
+        return None
 
 model = load_pneumonia_model()
+
+if model is None:
+    st.error("⚠️ Failed to load the model. Please refresh the page and try again.")
+    st.stop()
 
 def load_dicom(file_bytes, size=(128,128)):
     dcm = pydicom.dcmread(io.BytesIO(file_bytes))
@@ -60,48 +103,51 @@ uploaded_file = st.file_uploader("Choose a chest X-ray image",
                                    type=["dcm","png","jpg","jpeg"])
 
 if uploaded_file is not None:
-    file_bytes = uploaded_file.read()
-    ext = uploaded_file.name.split(".")[-1].lower()
-
-    if ext == "dcm":
-        img_gray = load_dicom(file_bytes)
+    if model is None:
+        st.error("Model is not available. Please refresh the page.")
     else:
-        from PIL import Image
-        img_gray = np.array(Image.open(io.BytesIO(file_bytes)).convert("L"))
+        file_bytes = uploaded_file.read()
+        ext = uploaded_file.name.split(".")[-1].lower()
 
-    in_channels = model.input_shape[-1]
-    inp = preprocess(img_gray, in_channels)
-    prob = float(model.predict(inp, verbose=0)[0][0])
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Uploaded X-Ray")
-        st.image(img_gray, caption=uploaded_file.name, use_column_width=True, clamp=True)
-
-    with col2:
-        st.subheader("Prediction Result")
-        if prob >= threshold:
-            st.error(f"**Pneumonia Detected**")
+        if ext == "dcm":
+            img_gray = load_dicom(file_bytes)
         else:
-            st.success(f"**No Pneumonia**")
+            from PIL import Image
+            img_gray = np.array(Image.open(io.BytesIO(file_bytes)).convert("L"))
 
-        st.metric("Pneumonia Probability", f"{prob*100:.1f}%")
-        st.metric("Threshold", f"{threshold*100:.0f}%")
-        st.progress(prob)
+        in_channels = model.input_shape[-1]
+        inp = preprocess(img_gray, in_channels)
+        prob = float(model.predict(inp, verbose=0)[0][0])
 
-    st.markdown("---")
-    st.markdown("**Class Probabilities:**")
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(5, 2))
-    ax.barh(["No Pneumonia","Pneumonia"], [1-prob, prob],
-             color=["green","red"], edgecolor="black", height=0.5)
-    ax.axvline(threshold, color="gray", linestyle="--", alpha=0.7)
-    ax.set_xlim(0, 1)
-    ax.set_xlabel("Probability")
-    plt.tight_layout()
-    st.pyplot(fig)
-    plt.close()
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("Uploaded X-Ray")
+            st.image(img_gray, caption=uploaded_file.name, use_column_width=True, clamp=True)
+
+        with col2:
+            st.subheader("Prediction Result")
+            if prob >= threshold:
+                st.error(f"**Pneumonia Detected**")
+            else:
+                st.success(f"**No Pneumonia**")
+
+            st.metric("Pneumonia Probability", f"{prob*100:.1f}%")
+            st.metric("Threshold", f"{threshold*100:.0f}%")
+            st.progress(prob)
+
+        st.markdown("---")
+        st.markdown("**Class Probabilities:**")
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(5, 2))
+        ax.barh(["No Pneumonia","Pneumonia"], [1-prob, prob],
+                 color=["green","red"], edgecolor="black", height=0.5)
+        ax.axvline(threshold, color="gray", linestyle="--", alpha=0.7)
+        ax.set_xlim(0, 1)
+        ax.set_xlabel("Probability")
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close()
 else:
     st.info("Please upload a chest X-ray image (DICOM, PNG, or JPG) to get started.")
     st.markdown("""
