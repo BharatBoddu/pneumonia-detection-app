@@ -98,12 +98,20 @@ def load_dicom(file_bytes, size=(128,128)):
     px = (px - px.min()) / (px.max() - px.min() + 1e-8) * 255.0
     return cv2.resize(px.astype(np.uint8), size)
 
-def preprocess(img, channels, size=(128,128)):
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if img.ndim == 3 else img
-    resized = cv2.resize(gray, size).astype(np.float32) / 255.0
+def preprocess(img, channels, size=(224,224)):
+    # If model expects 3 channels
     if channels == 3:
-        return np.repeat(resized[...,np.newaxis], 3, axis=-1)[np.newaxis,...]
-    return resized[np.newaxis,...,np.newaxis]
+        if img.ndim == 2:  # grayscale input
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        else:
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # ensure correct channel order
+        resized = cv2.resize(img, size).astype(np.float32) / 255.0
+        return np.expand_dims(resized, axis=0)  # (1,224,224,3)
+    
+    # If model expects 1 channel
+    resized = cv2.resize(img, size).astype(np.float32) / 255.0
+    return resized[np.newaxis,...,np.newaxis]  # (1,224,224,1)
+
 
 # Sidebar
 st.sidebar.header("Settings")
@@ -121,16 +129,17 @@ if uploaded_file is not None:
     else:
         file_bytes = uploaded_file.read()
         ext = uploaded_file.name.split(".")[-1].lower()
-
+        
         if ext == "dcm":
-            img_gray = load_dicom(file_bytes)
+            img = load_dicom(file_bytes)  # grayscale
         else:
             from PIL import Image
-            img_gray = np.array(Image.open(io.BytesIO(file_bytes)).convert("L"))
-
+            img = np.array(Image.open(io.BytesIO(file_bytes)).convert("RGB"))  # force RGB
+        
         in_channels = model.input_shape[-1]
-        inp = preprocess(img_gray, in_channels)
+        inp = preprocess(img, in_channels, size=(224,224))  # now matches model
         prob = float(model.predict(inp, verbose=0)[0][0])
+
 
         col1, col2 = st.columns(2)
 
