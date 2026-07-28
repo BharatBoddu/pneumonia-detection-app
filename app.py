@@ -145,7 +145,7 @@ if uploaded_file is not None:
 
         with col1:
             st.subheader("Uploaded X-Ray")
-            st.image(img_gray, caption=uploaded_file.name, use_column_width=True, clamp=True)
+            st.image(img, caption=uploaded_file.name, use_column_width=True, clamp=True)
 
         with col2:
             st.subheader("Prediction Result")
