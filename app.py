@@ -26,7 +26,8 @@ HF_MODEL_ID = "bharatboddu/pneumonia-detection-model"  # Update this!
 HF_MODEL_FILE = "best_pneumonia_model.keras"
 
 # Use Streamlit's cache directory for persistent storage
-CACHE_DIR = Path(st.config.get_option("client.caching.cache_dir"))
+# On Streamlit Cloud, this persists across app reruns
+CACHE_DIR = Path.home() / ".cache" / "streamlit_pneumonia"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_PATH = CACHE_DIR / HF_MODEL_FILE
 
@@ -36,18 +37,28 @@ def load_pneumonia_model():
         if not MODEL_PATH.exists():
             st.info("📥 Downloading model from Hugging Face... This may take a moment.")
             try:
-                # Download from Hugging Face Hub
+                # Download from Hugging Face Hub with streaming for large files
                 hf_url = f"https://huggingface.co/{HF_MODEL_ID}/resolve/main/{HF_MODEL_FILE}"
-                response = requests.get(hf_url, timeout=300)  # 5 min timeout for large files
+                response = requests.get(hf_url, timeout=600, stream=True)  # 10 min timeout
                 response.raise_for_status()
                 
+                # Get total file size for progress bar
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                
                 with open(MODEL_PATH, 'wb') as f:
-                    f.write(response.content)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0:
+                                progress = min(downloaded / total_size, 1.0)
+                                st.progress(progress, text=f"Downloaded {downloaded/(1024*1024):.1f}MB")
                     
             except Exception as e:
                 st.error(f"❌ Download failed: {str(e)}")
-                st.error("💡 Make sure to upload your model to Hugging Face Hub first:")
-                st.code("huggingface-cli upload <your-username>/<repo-name> best_pneumonia_model.keras .")
+                st.error("💡 Make sure your model is uploaded to Hugging Face Hub:")
+                st.code(f"HF_MODEL_ID = '{HF_MODEL_ID}'")
                 return None
             
             # Verify download
@@ -62,8 +73,10 @@ def load_pneumonia_model():
                 return None
             
             st.success(f"✅ Model downloaded successfully! ({file_size_mb:.1f} MB)")
+        else:
+            file_size_mb = MODEL_PATH.stat().st_size / (1024 * 1024)
+            st.success(f"✅ Model loaded from cache! ({file_size_mb:.1f} MB)")
         
-        st.success("✅ Model loaded from cache!")
         return load_model(str(MODEL_PATH))
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
