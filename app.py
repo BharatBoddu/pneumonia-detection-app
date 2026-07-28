@@ -23,15 +23,14 @@ st.markdown("---")
 MODEL_ID = "1aMbopMD9IocZAlfwgous7ml864xv7OfA"
 MODEL_PATH = "best_pneumonia_model.keras"
 
-if not os.path.exists(MODEL_PATH):
-    print("Downloading model from Google Drive...")
-    gdown.download(f"https://drive.google.com/uc?id={MODEL_ID}", MODEL_PATH, quiet=False)
+@st.cache_resource
+def load_pneumonia_model():
+    if not os.path.exists(MODEL_PATH):
+        st.info("Downloading model from Google Drive... This may take a moment.")
+        gdown.download(f"https://drive.google.com/uc?id={MODEL_ID}", MODEL_PATH, quiet=False)
+    return load_model(MODEL_PATH)
 
-model = load_model(MODEL_PATH)
-
-#@st.cache_resource
-#def load_model():
-#    return tf.keras.models.load_model(MODEL_PATH)
+model = load_pneumonia_model()
 
 def load_dicom(file_bytes, size=(128,128)):
     dcm = pydicom.dcmread(io.BytesIO(file_bytes))
@@ -61,7 +60,6 @@ uploaded_file = st.file_uploader("Choose a chest X-ray image",
                                    type=["dcm","png","jpg","jpeg"])
 
 if uploaded_file is not None:
-    model = load_model()
     file_bytes = uploaded_file.read()
     ext = uploaded_file.name.split(".")[-1].lower()
 
